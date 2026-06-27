@@ -2,6 +2,8 @@ import React, { useState, useRef } from "react";
 import { AppUser, FileType, Material, ALL_SUBJECTS } from "../types";
 import { DBService } from "../store";
 import { motion } from "motion/react";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage, isFirebaseConfigured } from "../firebase-client";
 import { 
   Upload, 
   Youtube, 
@@ -636,7 +638,38 @@ export default function WorkspaceHub({
 
     try {
       let fileBase64 = "";
+      let uploadedUrl = "";
+      let storagePath = "";
+      let uploadedFileName = "";
+      let uploadedFileSize = 0;
+
       if (selectedFile) {
+        uploadedFileName = selectedFile.name;
+        uploadedFileSize = selectedFile.size;
+
+        if (isFirebaseConfigured && storage) {
+          try {
+            setStatusLog(prev => [...prev, `Uploading file "${selectedFile.name}" to cloud Google Cloud Storage bucket...`]);
+            const uniqueId = Math.random().toString(36).substring(2, 15) + "_" + Date.now();
+            storagePath = `users/${currentUser.uid}/materials/${uniqueId}_${selectedFile.name}`;
+            const fileRef = ref(storage, storagePath);
+            await uploadBytes(fileRef, selectedFile);
+            uploadedUrl = await getDownloadURL(fileRef);
+            setStatusLog(prev => [...prev, `✓ Upload complete! Secured in cloud storage container.`]);
+          } catch (storageErr: any) {
+            console.error("Cloud storage upload failed:", storageErr);
+            setStatusLog(prev => [...prev, `⚠️ GCS/Firebase Storage upload failed: ${storageErr.message || "quota limit"}. Processing in memory...`]);
+          }
+        } else {
+          try {
+            uploadedUrl = URL.createObjectURL(selectedFile);
+            storagePath = `local-sandbox/materials/${selectedFile.name}`;
+            setStatusLog(prev => [...prev, `Sandbox Mode: Initialized virtual local blob reference.`]);
+          } catch (localErr) {
+            console.error(localErr);
+          }
+        }
+
         setStatusLog(prev => [...prev, `Converting file ${selectedFile.name} to base64 transmission chunks...`]);
         fileBase64 = await getBase64(selectedFile);
         setStatusLog(prev => [...prev, `File ready for streaming to Gemini.`]);
@@ -676,7 +709,11 @@ export default function WorkspaceHub({
         rawExtract || currentSample.content,
         data.structured_summary_markdown,
         selectedLanguage,
-        currentUser.selected_subject
+        currentUser.selected_subject,
+        uploadedUrl || undefined,
+        uploadedFileName || undefined,
+        uploadedFileSize || undefined,
+        storagePath || undefined
       );
 
       // Save related quiz records and flashcards in parallel

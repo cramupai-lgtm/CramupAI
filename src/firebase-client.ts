@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 import firebaseConfig from "./firebase-applet-config.json";
 
 const isFirebaseConfigured = !!(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.apiKey !== "");
@@ -8,6 +9,7 @@ const isFirebaseConfigured = !!(firebaseConfig && firebaseConfig.apiKey && fireb
 let app;
 let auth: any = null;
 let db: any = null;
+let storage: any = null;
 
 if (isFirebaseConfigured) {
   try {
@@ -17,6 +19,7 @@ if (isFirebaseConfigured) {
       experimentalForceLongPolling: true,
       experimentalAutoDetectLongPolling: false
     }, firebaseConfig.firestoreDatabaseId);
+    storage = getStorage(app);
     console.log("Firebase initialized successfully with configuration credentials.");
   } catch (err) {
     console.error("Firebase connection initialization failed, falling back to clean local database sandbox.", err);
@@ -25,4 +28,4 @@ if (isFirebaseConfigured) {
   console.log("Firebase credentials not configured yet. StudyVibe AI will default to robust sandbox local persistence mode.");
 }
 
-export { auth, db, isFirebaseConfigured };
+export { auth, db, storage, isFirebaseConfigured };

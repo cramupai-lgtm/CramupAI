@@ -33,7 +33,8 @@ import {
   User,
   Mail,
   Save,
-  Settings
+  Settings,
+  ExternalLink
 } from "lucide-react";
 import { auth, db, isFirebaseConfigured } from "./firebase-client";
 import { onAuthStateChanged } from "firebase/auth";
@@ -881,10 +882,28 @@ export default function App() {
                           <h2 className={`text-3xl font-extrabold tracking-tight leading-tight select-all ${isLightMode ? "text-zinc-905" : "text-white"}`}>
                             {selectedMaterial.title}
                           </h2>
-                          <div className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${isLightMode ? "text-zinc-500" : "text-zinc-500"}`}>
+                          <div className={`text-xs font-semibold uppercase tracking-wider flex flex-wrap items-center gap-1.5 ${isLightMode ? "text-zinc-500" : "text-zinc-500"}`}>
                             <span>{selectedMaterial.file_type}</span>
                             <span>&bull;</span>
                             <span>{selectedMaterial.subject || currentUser.selected_subject || "Biology"}</span>
+                            {selectedMaterial.file_url && (
+                              <>
+                                <span>&bull;</span>
+                                <a 
+                                  href={selectedMaterial.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`inline-flex items-center gap-1 normal-case px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-normal transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                                    isLightMode 
+                                      ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100/80 border border-indigo-200/50 shadow-sm" 
+                                      : "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 border border-indigo-500/20 shadow-md"
+                                  }`}
+                                >
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                  <span>View Original File</span>
+                                </a>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

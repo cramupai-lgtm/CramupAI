@@ -29,7 +29,11 @@
         "raw_extracted_text": { "type": "string", "description": "Plain words extracted from source" },
         "structured_summary_markdown": { "type": "string", "description": "Beautiful summaries parsed by Gemini API" },
         "translation_language": { "type": "string", "description": "Target localization key (default 'en')" },
-        "generated_at": { "type": "string", "format": "date-time", "description": "Insertion timestamp" }
+        "generated_at": { "type": "string", "format": "date-time", "description": "Insertion timestamp" },
+        "file_url": { "type": "string", "description": "Secure GCS/Firebase Storage download URL" },
+        "file_name": { "type": "string", "description": "Original file name of the upload" },
+        "file_size": { "type": "integer", "description": "Size of the file in bytes" },
+        "storage_path": { "type": "string", "description": "The exact storage path in Firebase Storage" }
       },
       "required": ["id", "user_id", "title", "file_type", "raw_extracted_text", "structured_summary_markdown", "translation_language", "generated_at"]
     },

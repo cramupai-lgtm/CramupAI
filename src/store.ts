@@ -501,7 +501,11 @@ export const DBService = {
     rawText: string,
     summaryMarkdown: string,
     language: string,
-    subject?: string
+    subject?: string,
+    fileUrl?: string,
+    fileName?: string,
+    fileSize?: number,
+    storagePath?: string
   ): Promise<Material> {
     const mat: Material = {
       id: generateId(),
@@ -512,7 +516,11 @@ export const DBService = {
       raw_extracted_text: rawText,
       structured_summary_markdown: summaryMarkdown,
       translation_language: language,
-      generated_at: new Date().toISOString()
+      generated_at: new Date().toISOString(),
+      file_url: fileUrl,
+      file_name: fileName,
+      file_size: fileSize,
+      storage_path: storagePath
     };
 
     if (isFirebaseConfigured && db) {

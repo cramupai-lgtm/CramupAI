@@ -60,6 +60,10 @@ export interface Material {
   structured_summary_markdown: string;
   translation_language: string;
   generated_at: string;
+  file_url?: string;
+  file_name?: string;
+  file_size?: number;
+  storage_path?: string;
 }
 
 export interface QuizQuestion {
