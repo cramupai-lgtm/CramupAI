@@ -1,0 +1,8 @@
+{
+  "name": "Cramup.AI",
+  "description": "A premium, simplified study-buddy and learning platform designed to ingest PDF, Video, Audio, and YouTube URL study materials, offering AI summaries, quizzes, flashcards, and tutoring chat.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

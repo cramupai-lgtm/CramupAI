@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Configuration metadata for users in StudyVibe AI",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique user ID" },
+        "email": { "type": "string", "format": "email", "description": "Primary communication address" },
+        "account_tier": { "type": "string", "enum": ["Free", "Premium"], "description": "The monetization status tier of the user" },
+        "selected_subject": { "type": "string", "description": "Selected active subject workspace tuning" },
+        "monthly_uploads_used_counter": { "type": "integer", "description": "Counter for documents uploaded in current 30-day block" },
+        "auto_renew": { "type": "boolean", "description": "Subscription automatic renewal indicator" },
+        "premium_purchased_at": { "type": "string", "description": "ISO timestamp of premium subscription start" },
+        "billing_period": { "type": "string", "enum": ["monthly", "annual"], "description": "Active subscription plan frequency style" }
+      },
+      "required": ["uid", "email", "account_tier", "selected_subject"]
+    },
+    "Material": {
+      "title": "Material",
+      "description": "Course material uploaded or pasted by students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Primary unique identifier" },
+        "user_id": { "type": "string", "description": "Relationship pointer to user key" },
+        "title": { "type": "string", "description": "Material reference title or YouTube URL query" },
+        "subject": { "type": "string", "description": "Subject classification of this material study deck" },
+        "file_type": { "type": "string", "enum": ["PDF", "Video", "Audio", "YouTube URL", "Photo"], "description": "Source container format" },
+        "raw_extracted_text": { "type": "string", "description": "Plain words extracted from source" },
+        "structured_summary_markdown": { "type": "string", "description": "Beautiful summaries parsed by Gemini API" },
+        "translation_language": { "type": "string", "description": "Target localization key (default 'en')" },
+        "generated_at": { "type": "string", "format": "date-time", "description": "Insertion timestamp" }
+      },
+      "required": ["id", "user_id", "title", "file_type", "raw_extracted_text", "structured_summary_markdown", "translation_language", "generated_at"]
+    },
+    "QuizRecord": {
+      "title": "QuizRecord",
+      "description": "Historically formatted study quiz records with interactive results",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Primary unique identifier" },
+        "material_id": { "type": "string", "description": "Material source relationship" },
+        "quiz_type": { "type": "string", "enum": ["MCQ", "Fill-In-The-Blanks"], "description": "Format configuration style" },
+        "selected_question_count": { "type": "integer", "description": "Requested question capacity size" },
+        "selected_choices_per_question": { "type": "integer", "description": "Density count for MCQ outputs" },
+        "questions": {
+          "type": "array",
+          "description": "List of generated questions inside the quiz"
+        }
+      },
+      "required": ["id", "material_id", "quiz_type", "selected_question_count", "selected_choices_per_question", "questions"]
+    },
+    "Flashcard": {
+      "title": "Flashcard",
+      "description": "Double-sided recall flashcards",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Flashcard UUID" },
+        "material_id": { "type": "string", "description": "Material parent relation pointer" },
+        "question_front": { "type": "string", "description": "The recall prompts or question front side" },
+        "answer_back": { "type": "string", "description": "The detailed answer back explanation" }
+      },
+      "required": ["id", "material_id", "question_front", "answer_back"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Timelined chat conversation payloads",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Message UUID" },
+        "material_id": { "type": "string", "description": "Active parent document anchor" },
+        "message_sender": { "type": "string", "enum": ["User", "AI"], "description": "Actor transmitting payload" },
+        "text_payload": { "type": "string", "description": "Plain message dialog content" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Transmission timestamp" }
+      },
+      "required": ["id", "material_id", "message_sender", "text_payload", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Active subscribers details"
+    },
+    "/materials/{materialId}": {
+      "schema": "Material",
+      "description": "Source text abstractions"
+    },
+    "/quiz_records/{quizRecordId}": {
+      "schema": "QuizRecord",
+      "description": "Testing queries"
+    },
+    "/flashcards/{flashcardId}": {
+      "schema": "Flashcard",
+      "description": "Study flashcards"
+    },
+    "/chat_log/{chatId}": {
+      "schema": "ChatMessage",
+      "description": "Discussion threads"
+    }
+  }
+}
