@@ -37,7 +37,7 @@ import {
   ExternalLink
 } from "lucide-react";
 import { auth, db, isFirebaseConfigured, activeFirebaseConfig } from "./firebase-client";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function App() {
@@ -67,7 +67,7 @@ export default function App() {
       } catch (e) {
         console.error("IndexedDB wipe failed:", e);
       }
-      localStorage.removeItem("studyvibe_current_user");
+      localStorage.removeItem("cramupai_current_user");
       window.location.reload();
     }
   };
@@ -97,17 +97,29 @@ export default function App() {
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         try {
           if (firebaseUser) {
+            // Actively block and log out any legacy/mock users with the studyvibe.edu domain
+            if (firebaseUser.email && (firebaseUser.email.toLowerCase() === "student@studyvibe.edu" || firebaseUser.email.toLowerCase().endsWith("@studyvibe.edu"))) {
+              console.warn("Detected legacy studyvibe session in Firebase Auth, signing out immediately.");
+              auth.signOut();
+              localStorage.removeItem("cramupai_current_user");
+              setCurrentUser(null);
+              setAuthInitialized(true);
+              return;
+            }
+
             let userDoc = null;
             try {
               userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
             } catch (dbErr: any) {
               console.error("Failed to fetch user document inside App mount listener, using fallback", dbErr);
               setDbError(dbErr?.message || String(dbErr));
-              const cachedStr = localStorage.getItem("studyvibe_current_user");
+              const cachedStr = localStorage.getItem("cramupai_current_user");
               if (cachedStr) {
                 try {
                   const cachedUser = JSON.parse(cachedStr) as AppUser;
-                  if (cachedUser && cachedUser.uid === firebaseUser.uid) {
+                  if (cachedUser && cachedUser.email && (cachedUser.email.toLowerCase() === "student@studyvibe.edu" || cachedUser.email.toLowerCase().endsWith("@studyvibe.edu"))) {
+                    localStorage.removeItem("cramupai_current_user");
+                  } else if (cachedUser && cachedUser.uid === firebaseUser.uid) {
                     console.log("Offline fallback: Restored user profile from cache", cachedUser);
                     setCurrentUser(cachedUser);
                     loadUserMaterials(cachedUser.uid);
@@ -118,28 +130,25 @@ export default function App() {
                   console.error("Parse cached user failed", parseErr);
                 }
               }
-              try {
-                handleFirestoreError(dbErr, OperationType.GET, `users/${firebaseUser.uid}`);
-              } catch (reportErr) {
-                console.warn("Using offline fallback default user profile", reportErr);
-                const offlineUser: AppUser = {
-                  uid: firebaseUser.uid,
-                  email: firebaseUser.email || "",
-                  account_tier: "Free",
-                  selected_subject: "Biology",
-                  monthly_uploads_used_counter: 0
-                };
-                setCurrentUser(offlineUser);
-                loadUserMaterials(firebaseUser.uid);
-                setAuthInitialized(true);
-                return;
-              }
+              console.warn("Using offline fallback default user profile", dbErr);
+              const offlineUser: AppUser = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email || "",
+                account_tier: "Free",
+                selected_subject: "Biology",
+                monthly_uploads_used_counter: 0
+              };
+              setCurrentUser(offlineUser);
+              localStorage.setItem("cramupai_current_user", JSON.stringify(offlineUser));
+              loadUserMaterials(firebaseUser.uid);
+              setAuthInitialized(true);
+              return;
             }
 
             if (userDoc && userDoc.exists()) {
               const u = userDoc.data() as AppUser;
               setCurrentUser(u);
-              localStorage.setItem("studyvibe_current_user", JSON.stringify(u));
+              localStorage.setItem("cramupai_current_user", JSON.stringify(u));
               loadUserMaterials(u.uid);
             } else {
               const defaultUser: AppUser = {
@@ -161,22 +170,15 @@ export default function App() {
                 }
               }
               setCurrentUser(defaultUser);
-              localStorage.setItem("studyvibe_current_user", JSON.stringify(defaultUser));
+              localStorage.setItem("cramupai_current_user", JSON.stringify(defaultUser));
               loadUserMaterials(firebaseUser.uid);
             }
           } else {
-            const cached = localStorage.getItem("studyvibe_current_user");
-            if (cached) {
-              const user = JSON.parse(cached) as AppUser;
-              setCurrentUser(user);
-              loadUserMaterials(user.uid);
-            } else {
-              setCurrentUser(null);
-            }
+            setCurrentUser(null);
           }
         } catch (err) {
           console.error("Failed to restore Firebase Auth state coordinates", err);
-          const cached = localStorage.getItem("studyvibe_current_user");
+          const cached = localStorage.getItem("cramupai_current_user");
           if (cached) {
             try {
               const user = JSON.parse(cached) as AppUser;
@@ -192,12 +194,18 @@ export default function App() {
       });
       return () => unsubscribe();
     } else {
-      const cached = localStorage.getItem("studyvibe_current_user");
+      const cached = localStorage.getItem("cramupai_current_user");
       if (cached) {
         try {
           const user = JSON.parse(cached) as AppUser;
-          setCurrentUser(user);
-          loadUserMaterials(user.uid);
+          if (user && user.email && (user.email.toLowerCase() === "student@studyvibe.edu" || user.email.toLowerCase().endsWith("@studyvibe.edu"))) {
+            console.log("Scrubbing cached legacy studyvibe fallback profile from local storage");
+            localStorage.removeItem("cramupai_current_user");
+            setCurrentUser(null);
+          } else {
+            setCurrentUser(user);
+            loadUserMaterials(user.uid);
+          }
         } catch (err) {
           console.error("Failed to parse cached session coordinates", err);
         }
@@ -236,7 +244,7 @@ export default function App() {
               auto_renew: true
             };
             setCurrentUser(updated);
-            localStorage.setItem("studyvibe_current_user", JSON.stringify(updated));
+            localStorage.setItem("cramupai_current_user", JSON.stringify(updated));
           } catch (err) {
             console.error("Auto renewal synchronization failed:", err);
           }
@@ -251,7 +259,7 @@ export default function App() {
               auto_renew: false
             };
             setCurrentUser(updated);
-            localStorage.setItem("studyvibe_current_user", JSON.stringify(updated));
+            localStorage.setItem("cramupai_current_user", JSON.stringify(updated));
           } catch (err) {
             console.error("Subscription deactivation update failed:", err);
           }
@@ -301,18 +309,25 @@ export default function App() {
 
   const handleAuthSuccess = (user: AppUser) => {
     setCurrentUser(user);
-    localStorage.setItem("studyvibe_current_user", JSON.stringify(user));
+    localStorage.setItem("cramupai_current_user", JSON.stringify(user));
     loadUserMaterials(user.uid);
     setActiveTab("dashboard");
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setCurrentUser(null);
     setMaterialsList([]);
     setSelectedMaterial(null);
-    localStorage.removeItem("studyvibe_current_user");
+    localStorage.removeItem("cramupai_current_user");
     setShowLanding(true);
     setIsRegisteringFromLanding(false);
+    if (isFirebaseConfigured && auth) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error("Firebase signOut failed", err);
+      }
+    }
   };
 
   const handleSubjectChange = async (newSubject: string) => {
@@ -326,7 +341,7 @@ export default function App() {
       await DBService.updateUserSubject(currentUser.uid, newSubject);
       const updatedUser = { ...currentUser, selected_subject: newSubject };
       setCurrentUser(updatedUser);
-      localStorage.setItem("studyvibe_current_user", JSON.stringify(updatedUser));
+      localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
     } catch (err) {
       console.error("Failed to update user subject selection:", err);
     }
@@ -339,7 +354,7 @@ export default function App() {
       await DBService.updateUserSubject(currentUser.uid, finalSubject);
       const updatedUser = { ...currentUser, selected_subject: finalSubject };
       setCurrentUser(updatedUser);
-      localStorage.setItem("studyvibe_current_user", JSON.stringify(updatedUser));
+      localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
       setShowCustomSubjectModal(false);
     } catch (err) {
       console.error("Failed to save custom user subject selection:", err);
@@ -348,13 +363,13 @@ export default function App() {
 
   const handleUpgradeSuccess = (updatedUser: AppUser) => {
     setCurrentUser(updatedUser);
-    localStorage.setItem("studyvibe_current_user", JSON.stringify(updatedUser));
+    localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
     setActiveTab("dashboard");
   };
 
   const handleProfileUpdate = (updatedUser: AppUser) => {
     setCurrentUser(updatedUser);
-    localStorage.setItem("studyvibe_current_user", JSON.stringify(updatedUser));
+    localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
   };
 
   const handleProcessingSuccess = (material: Material, questions: any[], flashcards: any[]) => {
@@ -368,7 +383,7 @@ export default function App() {
     if (!currentUser) return;
     const updated = { ...currentUser, monthly_uploads_used_counter: newCount };
     setCurrentUser(updated);
-    localStorage.setItem("studyvibe_current_user", JSON.stringify(updated));
+    localStorage.setItem("cramupai_current_user", JSON.stringify(updated));
   };
 
   const handleToggleTheme = () => {

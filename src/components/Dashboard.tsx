@@ -177,7 +177,7 @@ export default function Dashboard({
                 id: "welcome",
                 material_id: currentMaterial.id,
                 message_sender: "AI",
-                text_payload: `Welcome to your StudyVibe companion chatbot. Ask me critical questions grounded contextually on your uploaded document. I support specialized **${materialSubject}** tutoring rules.`,
+                text_payload: `Welcome to your Cramup.AI companion chatbot. Ask me critical questions grounded contextually on your uploaded document. I support specialized **${materialSubject}** tutoring rules.`,
                 timestamp: new Date().toISOString()
               }
             ]);
@@ -428,7 +428,7 @@ export default function Dashboard({
       };
 
       const sourceText = translatedSummary || currentMaterial?.structured_summary_markdown || "";
-      const textToSpeakRaw = sourceText || "Welcome to StudyVibe. Sit back and enjoy handsfree study session summaries.";
+      const textToSpeakRaw = sourceText || "Welcome to Cramup.AI. Sit back and enjoy handsfree study session summaries.";
       const cleanedTextForSpeech = getCleanTextForSpeech(textToSpeakRaw);
 
       const response = await fetch("/api/voice-synthesize", {
@@ -1181,7 +1181,7 @@ Please explain why the correct answer is indeed "${q.correct_answer}" and polite
         <Sparkles className="w-10 h-10 text-indigo-400 animate-pulse mb-3" />
         <h3 className={`text-md font-bold font-display ${isLightMode ? "text-zinc-900" : "text-white"}`}>Select or Compile Academic Material</h3>
         <p className={`text-xs mt-1 max-w-sm ${isLightMode ? "text-zinc-600" : "text-slate-400"}`}>
-          Activate StudyVibe by uploading a document in the uploader segment or clicking the ready-to-use sample notes button!
+          Activate Cramup.AI by uploading a document in the uploader segment or clicking the ready-to-use sample notes button!
         </p>
       </div>
     );

@@ -23,12 +23,12 @@ import {
 export const generateId = () => Math.random().toString(36).substring(2, 11);
 
 // Storage key fallback constants
-const USERS_KEY = "studyvibe_users";
-const CURRENT_USER_KEY = "studyvibe_current_user";
-const MATERIALS_KEY = "studyvibe_materials";
-const QUIZ_KEY = "studyvibe_quiz_records";
-const FLASHCARDS_KEY = "studyvibe_flashcards";
-const CHATS_KEY = "studyvibe_chats";
+const USERS_KEY = "cramupai_users";
+const CURRENT_USER_KEY = "cramupai_current_user";
+const MATERIALS_KEY = "cramupai_materials";
+const QUIZ_KEY = "cramupai_quiz_records";
+const FLASHCARDS_KEY = "cramupai_flashcards";
+const CHATS_KEY = "cramupai_chats";
 
 // Initial Local Storage setup if empty
 if (!localStorage.getItem(USERS_KEY)) {
@@ -268,7 +268,7 @@ export const DBService = {
   },
 
   // Authentication: Sign In with Google
-  async loginWithGoogle(): Promise<AppUser | null> {
+  async loginWithGoogle(providedEmail?: string): Promise<AppUser | null> {
     if (isFirebaseConfigured && db && auth) {
       try {
         const provider = new GoogleAuthProvider();
@@ -281,7 +281,23 @@ export const DBService = {
         try {
           const userDoc = await getDoc(userRef);
           if (userDoc.exists()) {
-            return userDoc.data() as AppUser;
+            const userData = userDoc.data() as AppUser;
+            const actualEmail = firebaseUser.email || "";
+            const isLegacyEmail = userData.email && (userData.email.toLowerCase() === "student@studyvibe.edu" || userData.email.toLowerCase().endsWith("@studyvibe.edu"));
+            const isMismatch = actualEmail && userData.email && (userData.email.toLowerCase() !== actualEmail.toLowerCase());
+            
+            if (!userData.email || isLegacyEmail || isMismatch) {
+              const updatedEmail = actualEmail || userData.email || `google-student-${generateId()}@cramupai.com`;
+              try {
+                await updateDoc(userRef, { email: updatedEmail });
+                userData.email = updatedEmail;
+                console.log("Successfully patched user document email in Firestore to match actual Google auth:", updatedEmail);
+              } catch (updateErr) {
+                console.error("Failed to patch user email in Firestore:", updateErr);
+                userData.email = updatedEmail;
+              }
+            }
+            return userData;
           } else {
             const defaultUser: AppUser = {
               uid: firebaseUser.uid,
@@ -308,26 +324,62 @@ export const DBService = {
           };
         }
       } catch (err: any) {
-        console.error("Google Auth Login failed", err);
-        throw err;
+        console.warn("Google Auth popup failed or blocked by iframe environment.", err);
+        // If we are on a production custom domain (e.g. cramupai.com), do NOT silently fallback to sandbox.
+        // Rethrow the error so that the user is shown the exact actionable Firebase configuration error.
+        const hostname = typeof window !== "undefined" && window.location ? window.location.hostname : "";
+        const isCustomDomain = hostname === "cramupai.com" || (hostname && !hostname.includes("run.app") && !hostname.includes("localhost"));
+        if (isCustomDomain) {
+          throw err;
+        }
+        // Fall through to Sandbox Mode Fallback so the user has an effortless sign-in experience in the iframe preview
       }
     }
     
-    // Sandbox Mode Fallback
+    // Sandbox Mode Fallback: allow logging in with different Google email addresses
+    let email = (providedEmail && providedEmail.trim()) || "";
+    // If the provided email is empty or matches the old leftover student address, clear it to prompt the user
+    if (email.toLowerCase() === "student@studyvibe.edu" || email.toLowerCase().endsWith("@studyvibe.edu")) {
+      email = "";
+    }
+    
+    if (!email) {
+      try {
+        const enteredEmail = window.prompt("Enter your Google email address to continue (Sandbox Fallback):", "");
+        if (enteredEmail && enteredEmail.trim()) {
+          const lowerEmail = enteredEmail.trim().toLowerCase();
+          if (lowerEmail === "student@studyvibe.edu" || lowerEmail.endsWith("@studyvibe.edu")) {
+            email = `google-student-${generateId()}@cramupai.com`;
+          } else {
+            email = lowerEmail;
+          }
+        } else {
+          // User cancelled the prompt or entered an empty email, abort login
+          return null;
+        }
+      } catch (e) {
+        console.warn("Could not prompt for email fallback", e);
+        // Clean fallback to a unique generated email address to completely avoid static 'student@studyvibe.edu' collision
+        email = `google-student-${generateId()}@cramupai.com`;
+      }
+    } else {
+      email = email.toLowerCase();
+    }
+
     const localUsers = localDb.getUsers();
-    let demoUser = localUsers[0];
-    if (!demoUser) {
-      demoUser = {
+    let existingUser = localUsers.find(u => u.email === email);
+    if (!existingUser) {
+      existingUser = {
         uid: generateId(),
-        email: "student@studyvibe.edu",
+        email: email,
         account_tier: "Free",
         selected_subject: "Biology",
         monthly_uploads_used_counter: 0
       };
-      localUsers.push(demoUser);
+      localUsers.push(existingUser);
       localDb.saveUsers(localUsers);
     }
-    return demoUser;
+    return existingUser;
   },
 
   // Update subscription or user profile subject

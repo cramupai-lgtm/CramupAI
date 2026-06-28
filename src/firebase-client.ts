@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, memoryLocalCache } from "firebase/firestore";
+import { initializeFirestore, memoryLocalCache, getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import firebaseConfigJson from "./firebase-applet-config.json";
 
@@ -27,40 +27,50 @@ let storage: any = null;
 if (isFirebaseConfigured) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    auth = getAuth(app);
-    // Use long polling only in dev, preview containers or if inside an iframe.
-    // On the custom top-level domain (cramupai.com), use standard connection options.
-    const isInsideIframe = (() => {
+    
+    // 1. Initialize Auth
+    try {
+      auth = getAuth(app);
+    } catch (authErr) {
+      console.error("Firebase Auth initialization failed:", authErr);
+    }
+
+    // 2. Initialize Firestore
+    try {
+      const dbSettings = {
+        localCache: memoryLocalCache(),
+        experimentalForceLongPolling: true
+      };
+
+      const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
+        ? firebaseConfig.firestoreDatabaseId
+        : undefined;
+
       try {
-        return typeof window !== "undefined" && window.self !== window.top;
-      } catch (e) {
-        return true;
+        db = databaseId 
+          ? initializeFirestore(app, dbSettings, databaseId) 
+          : initializeFirestore(app, dbSettings);
+      } catch (dbInitErr: any) {
+        console.warn("initializeFirestore failed or already initialized, retrieving existing Firestore instance.", dbInitErr);
+        db = getFirestore(app);
       }
-    })();
+    } catch (dbErr) {
+      console.error("Firebase Firestore setup failed completely:", dbErr);
+    }
 
-    // Always use long polling and memory cache to ensure maximum compatibility and reliability across
-    // preview environments, iframes, Vercel deployments, and custom top-level domains.
-    // Memory cache avoids security blocks on IndexedDB within cross-origin iframes.
-    const dbSettings = {
-      localCache: memoryLocalCache(),
-      experimentalForceLongPolling: true,
-      experimentalAutoDetectLongPolling: true
-    };
+    // 3. Initialize Storage
+    try {
+      storage = getStorage(app);
+    } catch (storageErr) {
+      console.error("Firebase Storage setup failed:", storageErr);
+    }
 
-    const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
-      ? firebaseConfig.firestoreDatabaseId
-      : undefined;
-
-    db = databaseId 
-      ? initializeFirestore(app, dbSettings, databaseId) 
-      : initializeFirestore(app, dbSettings);
-    storage = getStorage(app);
-    console.log("Firebase initialized successfully with configuration credentials.");
+    console.log("Firebase initialized successfully with robust configuration credentials.");
   } catch (err) {
     console.error("Firebase connection initialization failed, falling back to clean local database sandbox.", err);
   }
 } else {
-  console.log("Firebase credentials not configured yet. StudyVibe AI will default to robust sandbox local persistence mode.");
+  console.log("Firebase credentials not configured yet. Cramup.AI will default to robust sandbox local persistence mode.");
 }
 
 export { auth, db, storage, isFirebaseConfigured, firebaseConfig as activeFirebaseConfig };
