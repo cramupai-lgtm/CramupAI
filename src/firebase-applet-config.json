@@ -1,10 +1,10 @@
 {
-  "projectId": "quixotic-house-b6ppv",
-  "appId": "1:225603190175:web:0476cafbf14393822c51aa",
-  "apiKey": "AIzaSyDG5trKo7gxB8Un0nGBcn_bX177UoHDxiY",
-  "authDomain": "quixotic-house-b6ppv.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-f6595c5a-a09a-4eec-862c-c541e62bd713",
-  "storageBucket": "quixotic-house-b6ppv.firebasestorage.app",
-  "messagingSenderId": "225603190175",
-  "measurementId": ""
+  "projectId": "cramupai-b7bd8",
+  "appId": "1:496916472083:web:12e223d75586b1ce58bae6",
+  "apiKey": "AIzaSyD6C6em6DIdTFXATS6BvLbRpc-IltPykZA",
+  "authDomain": "cramupai-b7bd8.firebaseapp.com",
+  "storageBucket": "cramupai-b7bd8.firebasestorage.app",
+  "messagingSenderId": "496916472083",
+  "measurementId": "G-6PF5Q0HD29",
+  "firestoreDatabaseId": "(default)"
 }

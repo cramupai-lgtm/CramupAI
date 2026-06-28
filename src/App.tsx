@@ -36,7 +36,7 @@ import {
   Settings,
   ExternalLink
 } from "lucide-react";
-import { auth, db, isFirebaseConfigured } from "./firebase-client";
+import { auth, db, isFirebaseConfigured, activeFirebaseConfig } from "./firebase-client";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -56,10 +56,40 @@ export default function App() {
   const [showCustomSubjectModal, setShowCustomSubjectModal] = useState<boolean>(false);
   const [customSubjectInput, setCustomSubjectInput] = useState<string>("");
   const [deleteConfirmMaterialId, setDeleteConfirmMaterialId] = useState<string | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
+
+  const clearDbAndReload = () => {
+    if (typeof window !== "undefined") {
+      try {
+        // Delete standard Firestore IndexedDB database clients to force complete clean sync rebuild
+        window.indexedDB.deleteDatabase("firestore/[DEFAULT]/cramupai-b7bd8/main");
+        window.indexedDB.deleteDatabase("firestore/[DEFAULT]/cramupai-b7bd8");
+      } catch (e) {
+        console.error("IndexedDB wipe failed:", e);
+      }
+      localStorage.removeItem("studyvibe_current_user");
+      window.location.reload();
+    }
+  };
 
   // Landing Page toggle states
   const [showLanding, setShowLanding] = useState<boolean>(true);
   const [isRegisteringFromLanding, setIsRegisteringFromLanding] = useState<boolean>(false);
+
+  // Firebase Diagnostics Console logging
+  useEffect(() => {
+    console.log("%c[Firebase Diagnostics] Current Active Configuration in Applet:", "color: #4f46e5; font-weight: bold; font-size: 13px;", {
+      projectId: activeFirebaseConfig?.projectId,
+      authDomain: activeFirebaseConfig?.authDomain,
+      storageBucket: activeFirebaseConfig?.storageBucket,
+      messagingSenderId: activeFirebaseConfig?.messagingSenderId,
+      appId: activeFirebaseConfig?.appId,
+      isFirebaseConfigured: isFirebaseConfigured,
+      dbInitialized: !!db,
+      authInitialized: !!auth
+    });
+    console.log("%c[Firebase Hint] If Project ID doesn't match your new project, please update your Vercel Environment Variables!", "color: #f59e0b; font-weight: bold;");
+  }, []);
 
   // Load cached user session or synchronize Firebase session on mount
   useEffect(() => {
@@ -72,7 +102,38 @@ export default function App() {
               userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
             } catch (dbErr: any) {
               console.error("Failed to fetch user document inside App mount listener, using fallback", dbErr);
-              handleFirestoreError(dbErr, OperationType.GET, `users/${firebaseUser.uid}`);
+              setDbError(dbErr?.message || String(dbErr));
+              const cachedStr = localStorage.getItem("studyvibe_current_user");
+              if (cachedStr) {
+                try {
+                  const cachedUser = JSON.parse(cachedStr) as AppUser;
+                  if (cachedUser && cachedUser.uid === firebaseUser.uid) {
+                    console.log("Offline fallback: Restored user profile from cache", cachedUser);
+                    setCurrentUser(cachedUser);
+                    loadUserMaterials(cachedUser.uid);
+                    setAuthInitialized(true);
+                    return;
+                  }
+                } catch (parseErr) {
+                  console.error("Parse cached user failed", parseErr);
+                }
+              }
+              try {
+                handleFirestoreError(dbErr, OperationType.GET, `users/${firebaseUser.uid}`);
+              } catch (reportErr) {
+                console.warn("Using offline fallback default user profile", reportErr);
+                const offlineUser: AppUser = {
+                  uid: firebaseUser.uid,
+                  email: firebaseUser.email || "",
+                  account_tier: "Free",
+                  selected_subject: "Biology",
+                  monthly_uploads_used_counter: 0
+                };
+                setCurrentUser(offlineUser);
+                loadUserMaterials(firebaseUser.uid);
+                setAuthInitialized(true);
+                return;
+              }
             }
 
             if (userDoc && userDoc.exists()) {
@@ -92,7 +153,12 @@ export default function App() {
                 await setDoc(doc(db, "users", firebaseUser.uid), defaultUser);
               } catch (dbErr: any) {
                 console.error("Failed to write default user document to Firestore inside App mount listener", dbErr);
-                handleFirestoreError(dbErr, OperationType.WRITE, `users/${firebaseUser.uid}`);
+                setDbError(dbErr?.message || String(dbErr));
+                try {
+                  handleFirestoreError(dbErr, OperationType.WRITE, `users/${firebaseUser.uid}`);
+                } catch (reportErr) {
+                  console.warn("Ignored default user setDoc Firestore write error to continue with local mode", reportErr);
+                }
               }
               setCurrentUser(defaultUser);
               localStorage.setItem("studyvibe_current_user", JSON.stringify(defaultUser));
@@ -479,6 +545,53 @@ export default function App() {
 
         {/* Core application body container */}
         <div className="p-5 md:p-8 space-y-7 max-w-5xl mx-auto w-full flex-1" id="workspace-view">
+          
+          {/* Firestore Connection Troubleshooting Notice */}
+          {dbError && (
+            <div 
+              className={`p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all duration-300 relative z-55 ${
+                isLightMode 
+                  ? "bg-amber-50/90 border-amber-200 text-amber-900 shadow-md" 
+                  : "bg-amber-950/20 border-amber-800/20 text-amber-100 shadow-xl"
+              }`}
+              id="firestore-troubleshoot-banner"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-[10px] font-bold font-mono uppercase tracking-widest text-amber-650 dark:text-amber-400">
+                    Firebase Live Sync Pending
+                  </span>
+                </div>
+                <h4 className="text-sm font-bold tracking-tight">
+                  Stale Connection Cached
+                </h4>
+                <p className="text-[11px] opacity-85 max-w-xl">
+                  Since you recently created your Cloud Firestore database, your web browser's local connection caches may need to be cleared to link up. Click the repair button to clear the cached state and refresh.
+                </p>
+                {dbError && (
+                  <p className="text-[10px] font-mono opacity-60 bg-black/10 px-2 py-1 rounded mt-1 overflow-x-auto whitespace-pre-wrap max-h-16">
+                    Diagnostic Code: {dbError}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
+                <button
+                  onClick={clearDbAndReload}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-[10px] uppercase tracking-widest px-4 py-2 rounded-full transition-all border border-amber-500/20 shadow-md active:scale-95 cursor-pointer"
+                >
+                  Clear Cache & Repair
+                </button>
+                <button
+                  onClick={() => setDbError(null)}
+                  className="px-3 py-2 rounded-full hover:bg-amber-500/10 text-[10px] font-mono cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {/* TAB 1: EXECUTIVE GREETING DASHBOARD */}
             {activeTab === "dashboard" && (

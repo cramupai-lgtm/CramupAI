@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeFirestore, memoryLocalCache } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import firebaseConfigJson from "./firebase-applet-config.json";
 
@@ -28,10 +28,32 @@ if (isFirebaseConfigured) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
-    db = initializeFirestore(app, {
+    // Use long polling only in dev, preview containers or if inside an iframe.
+    // On the custom top-level domain (cramupai.com), use standard connection options.
+    const isInsideIframe = (() => {
+      try {
+        return typeof window !== "undefined" && window.self !== window.top;
+      } catch (e) {
+        return true;
+      }
+    })();
+
+    // Always use long polling and memory cache to ensure maximum compatibility and reliability across
+    // preview environments, iframes, Vercel deployments, and custom top-level domains.
+    // Memory cache avoids security blocks on IndexedDB within cross-origin iframes.
+    const dbSettings = {
+      localCache: memoryLocalCache(),
       experimentalForceLongPolling: true,
-      experimentalAutoDetectLongPolling: false
-    }, firebaseConfig.firestoreDatabaseId || "(default)");
+      experimentalAutoDetectLongPolling: true
+    };
+
+    const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
+      ? firebaseConfig.firestoreDatabaseId
+      : undefined;
+
+    db = databaseId 
+      ? initializeFirestore(app, dbSettings, databaseId) 
+      : initializeFirestore(app, dbSettings);
     storage = getStorage(app);
     console.log("Firebase initialized successfully with configuration credentials.");
   } catch (err) {
@@ -41,5 +63,5 @@ if (isFirebaseConfigured) {
   console.log("Firebase credentials not configured yet. StudyVibe AI will default to robust sandbox local persistence mode.");
 }
 
-export { auth, db, storage, isFirebaseConfigured };
+export { auth, db, storage, isFirebaseConfigured, firebaseConfig as activeFirebaseConfig };
 

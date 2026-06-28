@@ -338,8 +338,12 @@ export const DBService = {
         await updateDoc(userRef, { selected_subject: subject });
         return;
       } catch (err: any) {
-        console.error("Firestore update subject error", err);
-        handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        console.error("Firestore update subject error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -360,8 +364,12 @@ export const DBService = {
         await updateDoc(userRef, { ...data });
         return;
       } catch (err: any) {
-        console.error("Firestore update profile error", err);
-        handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        console.error("Firestore update profile error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -418,8 +426,12 @@ export const DBService = {
         const freshDoc = await getDoc(userRef);
         return freshDoc.exists() ? (freshDoc.data() as AppUser) : null;
       } catch (err: any) {
-        console.error("Firestore upgrade error", err);
-        handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        console.error("Firestore upgrade error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -476,8 +488,12 @@ export const DBService = {
           return current + 1;
         }
       } catch (err: any) {
-        console.error("Firestore increment upload counter error", err);
-        handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        console.error("Firestore increment upload counter error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -528,8 +544,12 @@ export const DBService = {
         await setDoc(doc(db, "materials", mat.id), mat);
         return mat;
       } catch (err: any) {
-        console.error("Firestore save material failed", err);
-        handleFirestoreError(err, OperationType.WRITE, `materials/${mat.id}`);
+        console.error("Firestore save material failed, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, `materials/${mat.id}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -548,8 +568,12 @@ export const DBService = {
         const snap = await getDocs(q);
         return snap.docs.map(doc => doc.data() as Material);
       } catch (err: any) {
-        console.error("Firestore query materials error", err);
-        handleFirestoreError(err, OperationType.LIST, "materials");
+        console.error("Firestore query materials error, using local fallback:", err);
+        try {
+          handleFirestoreError(err, OperationType.LIST, "materials");
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -563,8 +587,12 @@ export const DBService = {
         await deleteDoc(doc(db, "materials", materialId));
         return true;
       } catch (err: any) {
-        console.error("Firestore delete material failed", err);
-        handleFirestoreError(err, OperationType.DELETE, `materials/${materialId}`);
+        console.error("Firestore delete material failed, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.DELETE, `materials/${materialId}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
         return false;
       }
     }
@@ -597,8 +625,12 @@ export const DBService = {
         await setDoc(doc(db, "quiz_records", quiz.id), quiz);
         return quiz;
       } catch (err: any) {
-        console.error("Firestore save quiz record error", err);
-        handleFirestoreError(err, OperationType.WRITE, `quiz_records/${quiz.id}`);
+        console.error("Firestore save quiz record error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, `quiz_records/${quiz.id}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -616,8 +648,12 @@ export const DBService = {
         const snap = await getDocs(q);
         return snap.docs.map(doc => doc.data() as QuizRecord);
       } catch (err: any) {
-        console.error("Firestore query quiz records error", err);
-        handleFirestoreError(err, OperationType.LIST, "quiz_records");
+        console.error("Firestore query quiz records error, using local fallback:", err);
+        try {
+          handleFirestoreError(err, OperationType.LIST, "quiz_records");
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -644,8 +680,12 @@ export const DBService = {
         await batch.commit();
         return savedCards;
       } catch (err: any) {
-        console.error("Firestore save flashcards batch error", err);
-        handleFirestoreError(err, OperationType.WRITE, "flashcards");
+        console.error("Firestore save flashcards batch error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, "flashcards");
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -671,8 +711,12 @@ export const DBService = {
         await setDoc(doc(db, "flashcards", card.id), card);
         return card;
       } catch (err: any) {
-        console.error("Firestore save custom flashcard error", err);
-        handleFirestoreError(err, OperationType.WRITE, "flashcards");
+        console.error("Firestore save custom flashcard error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, "flashcards");
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -736,8 +780,12 @@ export const DBService = {
         const snap = await getDocs(q);
         return snap.docs.map(doc => doc.data() as Flashcard);
       } catch (err: any) {
-        console.error("Firestore query flashcards error", err);
-        handleFirestoreError(err, OperationType.LIST, "flashcards");
+        console.error("Firestore query flashcards error, using local fallback:", err);
+        try {
+          handleFirestoreError(err, OperationType.LIST, "flashcards");
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -759,8 +807,12 @@ export const DBService = {
         await setDoc(doc(db, "chat_log", msg.id), msg);
         return msg;
       } catch (err: any) {
-        console.error("Firestore save chat message error", err);
-        handleFirestoreError(err, OperationType.WRITE, `chat_log/${msg.id}`);
+        console.error("Firestore save chat message error, using local fallback", err);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, `chat_log/${msg.id}`);
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
@@ -779,8 +831,12 @@ export const DBService = {
         const msgs = snap.docs.map(doc => doc.data() as ChatMessage);
         return msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       } catch (err: any) {
-        console.error("Firestore query chat history error", err);
-        handleFirestoreError(err, OperationType.LIST, "chat_log");
+        console.error("Firestore query chat history error, using local fallback:", err);
+        try {
+          handleFirestoreError(err, OperationType.LIST, "chat_log");
+        } catch (reportErr) {
+          console.warn("Ignored Firestore report to use local cache", reportErr);
+        }
       }
     }
 
