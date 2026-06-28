@@ -324,15 +324,10 @@ export const DBService = {
           };
         }
       } catch (err: any) {
-        console.warn("Google Auth popup failed or blocked by iframe environment.", err);
-        // If we are on a production custom domain (e.g. cramupai.com), do NOT silently fallback to sandbox.
-        // Rethrow the error so that the user is shown the exact actionable Firebase configuration error.
-        const hostname = typeof window !== "undefined" && window.location ? window.location.hostname : "";
-        const isCustomDomain = hostname === "cramupai.com" || (hostname && !hostname.includes("run.app") && !hostname.includes("localhost"));
-        if (isCustomDomain) {
-          throw err;
-        }
-        // Fall through to Sandbox Mode Fallback so the user has an effortless sign-in experience in the iframe preview
+        console.error("Google Auth popup failed or blocked:", err);
+        // If Firebase is active and configured, always bubble up the real auth error instead of silently
+        // falling back to local sandbox with a random email, preventing user confusion and data-loss risks.
+        throw err;
       }
     }
     
