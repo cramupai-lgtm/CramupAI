@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   User, 
   Mail, 
@@ -10,10 +10,19 @@ import {
   Sparkles,
   ChevronRight,
   FileText,
-  CreditCard
+  CreditCard,
+  Activity,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  RefreshCw,
+  ShieldAlert
 } from "lucide-react";
 import { AppUser, ALL_SUBJECTS } from "../types";
 import { DBService } from "../store";
+import { auth, db, storage, isFirebaseConfigured } from "../firebase-client";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 interface SettingsPageProps {
   currentUser: AppUser;
@@ -46,9 +55,204 @@ export default function SettingsPage({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [autoRenew, setAutoRenew] = useState(currentUser.auto_renew !== false);
 
+  useEffect(() => {
+    setDisplayName(currentUser.display_name || defaultName);
+    setSelectedSubject(currentUser.selected_subject);
+    setAutoRenew(currentUser.auto_renew !== false);
+  }, [currentUser, defaultName]);
+
   // Custom alert & confirmation modal states
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type?: "success" | "error" | "info" } | null>(null);
+
+  // Diagnostics Panel states
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [diagnosticsLogs, setDiagnosticsLogs] = useState<string[]>([]);
+  const [diagnosticsResult, setDiagnosticsResult] = useState<{
+    apiServer: { status: "unchecked" | "ok" | "error"; details: string; latency?: number };
+    geminiKey: { status: "unchecked" | "ok" | "error"; details: string };
+    firebaseAuth: { status: "unchecked" | "ok" | "error"; details: string };
+    firestoreDb: { status: "unchecked" | "ok" | "error"; details: string };
+    firebaseStorage: { status: "unchecked" | "ok" | "error"; details: string };
+  } | null>(null);
+
+  const runDiagnostics = async () => {
+    setIsDiagnosing(true);
+    setDiagnosticsLogs(["Starting comprehensive system diagnostics...", `Current timestamp: ${new Date().toISOString()}`, `User environment origin: ${window.location.origin}`]);
+    
+    const result: {
+      apiServer: { status: "unchecked" | "ok" | "error"; details: string; latency?: number };
+      geminiKey: { status: "unchecked" | "ok" | "error"; details: string };
+      firebaseAuth: { status: "unchecked" | "ok" | "error"; details: string };
+      firestoreDb: { status: "unchecked" | "ok" | "error"; details: string };
+      firebaseStorage: { status: "unchecked" | "ok" | "error"; details: string };
+    } = {
+      apiServer: { status: "unchecked", details: "Not tested" },
+      geminiKey: { status: "unchecked", details: "Not tested" },
+      firebaseAuth: { status: "unchecked", details: "Not tested" },
+      firestoreDb: { status: "unchecked", details: "Not tested" },
+      firebaseStorage: { status: "unchecked", details: "Not tested" }
+    };
+    
+    setDiagnosticsResult({ ...result });
+
+    // 1. Test Express API Server connectivity
+    try {
+      setDiagnosticsLogs(prev => [...prev, "1. Fetching server health endpoint: '/api/health'..."]);
+      const startTime = Date.now();
+      const res = await fetch("/api/health");
+      const latency = Date.now() - startTime;
+      
+      if (res.ok) {
+        const data = await res.json();
+        result.apiServer = { 
+          status: "ok", 
+          details: `Connected successfully! (latency: ${latency}ms, mode: ${data.mode || "production"})`,
+          latency 
+        };
+        setDiagnosticsLogs(prev => [...prev, `✓ Server connected in ${latency}ms.`]);
+        
+        // 2. Test Gemini API Key
+        if (data.gemini_configured) {
+          result.geminiKey = { status: "ok", details: "Gemini API Key is defined in backend environment variables!" };
+          setDiagnosticsLogs(prev => [...prev, "✓ Gemini API Key is configured and ready on backend!"]);
+        } else {
+          result.geminiKey = { status: "error", details: "Gemini API Key is NOT defined on the server! Fallback mockups will trigger." };
+          setDiagnosticsLogs(prev => [...prev, "⚠️ Gemini API Key is missing on your server. Go to Cloud Run or your deployment console and set the GEMINI_API_KEY environment variable."]);
+        }
+      } else {
+        result.apiServer = { status: "error", details: `Server responded with status code: ${res.status}` };
+        result.geminiKey = { status: "error", details: "Unavailable (server health check failed)" };
+        setDiagnosticsLogs(prev => [...prev, `❌ Server responded with code ${res.status}.`]);
+      }
+    } catch (apiErr: any) {
+      result.apiServer = { 
+        status: "error", 
+        details: `Connection failed: ${apiErr.message || "Network Error"}. Your custom domain might not be running the Express server (e.g. running as a static-only page on Hostinger/Vercel/Firebase Hosting instead of Cloud Run).` 
+      };
+      result.geminiKey = { status: "error", details: "Unavailable (server connection failed)" };
+      setDiagnosticsLogs(prev => [
+        ...prev, 
+        `❌ API Connection failed: ${apiErr.message || "Network Error"}.`,
+        "⚠️ Recommendation: If cramupai.com is hosted as static HTML, you must configure a backend server (like Cloud Run) and point your domain to the server, as API requests require the Node.js Express backend."
+      ]);
+    }
+    setDiagnosticsResult({ ...result });
+    await new Promise(r => setTimeout(r, 600));
+
+    // 3. Test Firebase Authentication
+    try {
+      setDiagnosticsLogs(prev => [...prev, "2. Checking Firebase Auth state..."]);
+      if (isFirebaseConfigured && auth) {
+        const user = auth.currentUser;
+        if (user) {
+          result.firebaseAuth = { 
+            status: "ok", 
+            details: `Signed In: ${user.email} (UID: ${user.uid.substring(0, 8)}..., Verified: ${user.emailVerified})` 
+          };
+          setDiagnosticsLogs(prev => [...prev, `✓ Firebase Auth is active. User is logged in as ${user.email}.`]);
+        } else {
+          result.firebaseAuth = { status: "error", details: "No active user session found in Firebase Auth." };
+          setDiagnosticsLogs(prev => [...prev, "❌ No active Firebase Auth user session found."]);
+        }
+      } else {
+        result.firebaseAuth = { status: "error", details: "Firebase is NOT initialized or configured on this client." };
+        setDiagnosticsLogs(prev => [...prev, "❌ Firebase configuration credentials are missing in firebase-client."]);
+      }
+    } catch (authErr: any) {
+      result.firebaseAuth = { status: "error", details: authErr.message || "Auth check error" };
+      setDiagnosticsLogs(prev => [...prev, `❌ Auth check failed: ${authErr.message}`]);
+    }
+    setDiagnosticsResult({ ...result });
+    await new Promise(r => setTimeout(r, 600));
+
+    // 4. Test Firestore database reads & writes
+    try {
+      setDiagnosticsLogs(prev => [...prev, "3. Testing Firestore database read & write rules..."]);
+      if (isFirebaseConfigured && db && auth?.currentUser) {
+        const userId = auth.currentUser.uid;
+        const userRef = doc(db, "users", userId);
+        
+        setDiagnosticsLogs(prev => [...prev, "   - Attempting to read your user document from Firestore..."]);
+        const docSnap = await getDoc(userRef);
+        setDiagnosticsLogs(prev => [...prev, "   ✓ Firestore read successful!"]);
+        
+        setDiagnosticsLogs(prev => [...prev, "   - Attempting to update selected_subject to check write permissions..."]);
+        await updateDoc(userRef, { selected_subject: currentUser.selected_subject });
+        setDiagnosticsLogs(prev => [...prev, "   ✓ Firestore write/update successful!"]);
+        
+        result.firestoreDb = { status: "ok", details: "Firestore read and write operations are fully operational!" };
+        setDiagnosticsLogs(prev => [...prev, "✓ Firestore database is fully functional!"]);
+      } else {
+        result.firestoreDb = { status: "error", details: "Firestore client is uninitialized or user is not signed in." };
+        setDiagnosticsLogs(prev => [...prev, "❌ Firestore test skipped: Client not initialized or user not logged in."]);
+      }
+    } catch (dbErr: any) {
+      let advice = "";
+      if (dbErr.code === "permission-denied" || dbErr.message?.includes("insufficient permissions")) {
+        advice = "Security rules on Firestore are rejecting the action. Check your 'firestore.rules' deployment.";
+      } else if (dbErr.code === "not-found" || dbErr.message?.includes("database")) {
+        advice = "Firestore database does not exist in your Firebase project! Go to Firebase Console, click 'Firestore Database', and click 'Create Database'.";
+      } else {
+        advice = `Firestore error: ${dbErr.message || dbErr}. Make sure you have created the Cloud Firestore database in the Firebase console.`;
+      }
+      result.firestoreDb = { status: "error", details: dbErr.message || String(dbErr) };
+      setDiagnosticsLogs(prev => [
+        ...prev, 
+        `❌ Firestore operation failed: ${dbErr.message || dbErr}.`,
+        `💡 Recommendation: ${advice}`
+      ]);
+    }
+    setDiagnosticsResult({ ...result });
+    await new Promise(r => setTimeout(r, 600));
+
+    // 5. Test Firebase Cloud Storage
+    try {
+      setDiagnosticsLogs(prev => [...prev, "4. Testing Firebase Storage upload & delete capabilities..."]);
+      if (isFirebaseConfigured && storage && auth?.currentUser) {
+        const userId = auth.currentUser.uid;
+        const testBlob = new Blob(["CramupAI Storage Diagnostics check."], { type: "text/plain" });
+        const testRef = ref(storage, `users/${userId}/materials/diagnostics_test_file.txt`);
+        
+        setDiagnosticsLogs(prev => [...prev, "   - Attempting small file upload to storage bucket..."]);
+        await uploadBytes(testRef, testBlob);
+        setDiagnosticsLogs(prev => [...prev, "   ✓ Upload successful!"]);
+        
+        setDiagnosticsLogs(prev => [...prev, "   - Attempting download URL retrieval..."]);
+        const url = await getDownloadURL(testRef);
+        setDiagnosticsLogs(prev => [...prev, `   ✓ Download URL retrieved successfully.`]);
+        
+        setDiagnosticsLogs(prev => [...prev, "   - Cleaning up: Deleting diagnostic file..."]);
+        await deleteObject(testRef);
+        setDiagnosticsLogs(prev => [...prev, "   ✓ File cleanup successful!"]);
+        
+        result.firebaseStorage = { status: "ok", details: "Google Cloud Storage bucket read, write, and deletion are fully active!" };
+        setDiagnosticsLogs(prev => [...prev, "✓ Firebase Cloud Storage is fully functional!"]);
+      } else {
+        result.firebaseStorage = { status: "error", details: "Storage client is uninitialized or user is not logged in." };
+        setDiagnosticsLogs(prev => [...prev, "❌ Storage test skipped: Client not initialized or user not logged in."]);
+      }
+    } catch (storageErr: any) {
+      let advice = "";
+      if (storageErr.code === "storage/unauthorized" || storageErr.message?.includes("unauthorized")) {
+        advice = "Storage rules are rejecting the upload. Ensure your Firebase Storage rules permit uploads at 'users/{userId}/materials/'.";
+      } else if (storageErr.code === "storage/bucket-not-found" || storageErr.message?.includes("bucket")) {
+        advice = "The Storage bucket specified in 'firebase-applet-config.json' was not found or has not been initialized. Go to Firebase Console, click 'Storage', and click 'Get Started' to enable it.";
+      } else {
+        advice = `Storage error: ${storageErr.message || storageErr}. Make sure to enable Firebase Storage in your Firebase Console.`;
+      }
+      result.firebaseStorage = { status: "error", details: storageErr.message || String(storageErr) };
+      setDiagnosticsLogs(prev => [
+        ...prev, 
+        `❌ Storage operation failed: ${storageErr.message || storageErr}.`,
+        `💡 Recommendation: ${advice}`
+      ]);
+    }
+    
+    setDiagnosticsLogs(prev => [...prev, "Diagnostics complete. Review recommendations for any red items."]);
+    setDiagnosticsResult({ ...result });
+    setIsDiagnosing(false);
+  };
 
   const limitDays = currentUser.billing_period === "annual" ? 365 : 30;
   const purchaseTime = currentUser.premium_purchased_at ? new Date(currentUser.premium_purchased_at).getTime() : null;
@@ -746,6 +950,177 @@ export default function SettingsPage({
             </div>
           </div>
         )}
+
+        {/* SECTION 4.5: SYSTEM DIAGNOSTICS & INFRASTRUCTURE HEALTH */}
+        <div className="space-y-3" id="settings-diagnostics-section">
+          <h3 className={`text-[10px] font-bold font-mono uppercase tracking-wider ${isLightMode ? "text-zinc-500" : "text-zinc-500"}`}>
+            System Health & Diagnostics
+          </h3>
+
+          <div className={`p-5 rounded-2xl border space-y-4 transition-all ${
+            isLightMode 
+              ? "bg-white border-zinc-200 text-zinc-900 shadow-sm" 
+              : "bg-[#09090b]/80 border-white/5 text-slate-100"
+          }`} id="settings-diagnostics-card">
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 overflow-hidden">
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                  isLightMode ? "bg-indigo-50 text-indigo-600" : "bg-indigo-500/10 text-indigo-400"
+                }`}>
+                  <Activity className={`w-5 h-5 ${isDiagnosing ? "animate-pulse" : ""}`} />
+                </div>
+                <div className="overflow-hidden p-0.5">
+                  <span className={`block text-xs sm:text-sm font-bold ${isLightMode ? "text-zinc-950" : "text-white"}`}>
+                    Connection & Database Diagnostics
+                  </span>
+                  <span className={`block text-[10px] sm:text-[11px] mt-1 text-zinc-500 whitespace-pre-wrap leading-tight`}>
+                    Verify Express API endpoints, Gemini API key presence, and Firebase Firestore/Storage permissions on cramupai.com.
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                id="run-diagnostics-btn"
+                disabled={isDiagnosing}
+                onClick={runDiagnostics}
+                className="bg-[#7c3aed] hover:bg-[#6d28d9] disabled:opacity-50 text-white text-xs font-mono font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl border border-purple-500/10 shadow-lg shadow-purple-500/5 transition-all cursor-pointer active:scale-95 shrink-0 flex items-center gap-2"
+              >
+                {isDiagnosing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Test Connection"
+                )}
+              </button>
+            </div>
+
+            {/* Diagnostic results breakdown */}
+            {diagnosticsResult && (
+              <div className={`mt-4 rounded-xl border p-4 space-y-3.5 font-mono text-xs ${
+                isLightMode ? "bg-zinc-50 border-zinc-200 animate-fade-in" : "bg-zinc-900/30 border-white/[0.03] animate-fade-in"
+              }`} id="diagnostics-results-panel">
+                
+                {/* 1. API Server Check */}
+                <div className="flex items-start gap-2.5">
+                  <div className="shrink-0 mt-0.5">
+                    {diagnosticsResult.apiServer.status === "ok" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : diagnosticsResult.apiServer.status === "error" ? (
+                      <XCircle className="w-4 h-4 text-rose-500" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase tracking-wide text-[10px] text-zinc-500">API Connection:</span>
+                    <p className={`mt-0.5 text-[11px] font-sans ${diagnosticsResult.apiServer.status === "ok" ? "text-emerald-500 font-semibold" : diagnosticsResult.apiServer.status === "error" ? "text-rose-500 font-bold" : "text-zinc-500"}`}>
+                      {diagnosticsResult.apiServer.details}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Gemini API Check */}
+                <div className="flex items-start gap-2.5">
+                  <div className="shrink-0 mt-0.5">
+                    {diagnosticsResult.geminiKey.status === "ok" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : diagnosticsResult.geminiKey.status === "error" ? (
+                      <XCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase tracking-wide text-[10px] text-zinc-500">Gemini AI Engine:</span>
+                    <p className={`mt-0.5 text-[11px] font-sans ${diagnosticsResult.geminiKey.status === "ok" ? "text-emerald-500 font-semibold" : diagnosticsResult.geminiKey.status === "error" ? "text-amber-500 font-semibold" : "text-zinc-500"}`}>
+                      {diagnosticsResult.geminiKey.details}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3. Firebase Auth Check */}
+                <div className="flex items-start gap-2.5">
+                  <div className="shrink-0 mt-0.5">
+                    {diagnosticsResult.firebaseAuth.status === "ok" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : diagnosticsResult.firebaseAuth.status === "error" ? (
+                      <XCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase tracking-wide text-[10px] text-zinc-500">Firebase Auth:</span>
+                    <p className={`mt-0.5 text-[11px] font-sans ${diagnosticsResult.firebaseAuth.status === "ok" ? "text-emerald-500 font-semibold" : diagnosticsResult.firebaseAuth.status === "error" ? "text-rose-500 font-semibold" : "text-zinc-500"}`}>
+                      {diagnosticsResult.firebaseAuth.details}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 4. Firestore DB Check */}
+                <div className="flex items-start gap-2.5">
+                  <div className="shrink-0 mt-0.5">
+                    {diagnosticsResult.firestoreDb.status === "ok" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : diagnosticsResult.firestoreDb.status === "error" ? (
+                      <XCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase tracking-wide text-[10px] text-zinc-500">Firestore Database:</span>
+                    <p className={`mt-0.5 text-[11px] font-sans ${diagnosticsResult.firestoreDb.status === "ok" ? "text-emerald-500 font-semibold" : diagnosticsResult.firestoreDb.status === "error" ? "text-rose-500 font-semibold" : "text-zinc-500"}`}>
+                      {diagnosticsResult.firestoreDb.details}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 5. Storage Check */}
+                <div className="flex items-start gap-2.5">
+                  <div className="shrink-0 mt-0.5">
+                    {diagnosticsResult.firebaseStorage.status === "ok" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : diagnosticsResult.firebaseStorage.status === "error" ? (
+                      <XCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase tracking-wide text-[10px] text-zinc-500">Cloud Storage Bucket:</span>
+                    <p className={`mt-0.5 text-[11px] font-sans ${diagnosticsResult.firebaseStorage.status === "ok" ? "text-emerald-500 font-semibold" : diagnosticsResult.firebaseStorage.status === "error" ? "text-rose-500 font-semibold" : "text-zinc-500"}`}>
+                      {diagnosticsResult.firebaseStorage.details}
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* Detailed Terminal-like scrolling console logs */}
+            {diagnosticsLogs.length > 0 && (
+              <div className={`rounded-xl p-3.5 font-mono text-[10px] leading-relaxed max-h-48 overflow-y-auto border flex flex-col gap-1 ${
+                isLightMode ? "bg-zinc-950 text-emerald-400 border-zinc-900" : "bg-[#050507] text-emerald-400 border-white/[0.03]"
+              }`} id="diagnostics-terminal-logs">
+                <div className="flex items-center justify-between border-b border-emerald-500/20 pb-1.5 mb-1 text-emerald-500/60 font-bold uppercase tracking-widest text-[8px]">
+                  <span>System Diagnostics Terminal</span>
+                  <span className="animate-pulse">● Live</span>
+                </div>
+                {diagnosticsLogs.map((log, idx) => (
+                  <div key={idx} className="whitespace-pre-wrap select-text">
+                    {log}
+                  </div>
+                ))}
+              </div>
+            )}
+
+          </div>
+        </div>
 
         {/* SECTION 5: ACCOUNT ACTIONS */}
         <div className="space-y-3">

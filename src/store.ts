@@ -16,7 +16,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult
 } from "firebase/auth";
 
 // Helper to generate IDs
@@ -270,14 +272,11 @@ export const DBService = {
   // Authentication: Sign In with Google
   async loginWithGoogle(providedEmail?: string): Promise<AppUser | null> {
     if (isFirebaseConfigured && db && auth) {
-      try {
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
-        const firebaseUser = result.user;
-        
-        // Signed in on Firebase, let's query/create the user document
+      const provider = new GoogleAuthProvider();
+      const isIframe = typeof window !== "undefined" && window.self !== window.top;
+
+      const handleUserSync = async (firebaseUser: any): Promise<AppUser> => {
         const userRef = doc(db, "users", firebaseUser.uid);
-        
         try {
           const userDoc = await getDoc(userRef);
           if (userDoc.exists()) {
@@ -314,7 +313,6 @@ export const DBService = {
           if (dbErr?.code === 'permission-denied' || dbErr?.message?.includes("insufficient permissions")) {
             handleFirestoreError(dbErr, OperationType.GET, `users/${firebaseUser.uid}`);
           }
-          // Return default user locally since authentication succeeded perfectly
           return {
             uid: firebaseUser.uid,
             email: firebaseUser.email || "",
@@ -323,11 +321,35 @@ export const DBService = {
             monthly_uploads_used_counter: 0
           };
         }
-      } catch (err: any) {
-        console.error("Google Auth popup failed or blocked:", err);
-        // If Firebase is active and configured, always bubble up the real auth error instead of silently
-        // falling back to local sandbox with a random email, preventing user confusion and data-loss risks.
-        throw err;
+      };
+
+      if (!isIframe) {
+        // We are on a custom domain/top-level tab. Try popup, but immediately fall back to redirect if popup fails or gets blocked.
+        try {
+          console.log("Not in iframe, attempting signInWithPopup...");
+          const result = await signInWithPopup(auth, provider);
+          return await handleUserSync(result.user);
+        } catch (err: any) {
+          console.warn("signInWithPopup failed or was blocked by browser. Falling back to signInWithRedirect...", err);
+          try {
+            await signInWithRedirect(auth, provider);
+            // signInWithRedirect redirects the top-level page, so execution ends here as page unloads
+            return null;
+          } catch (redirectErr) {
+            console.error("signInWithRedirect failed:", redirectErr);
+            throw redirectErr;
+          }
+        }
+      } else {
+        // In iframe environment (e.g. AI Studio preview), redirecting top window is restricted, popup is mandatory
+        try {
+          console.log("Running in iframe, initiating signInWithPopup...");
+          const result = await signInWithPopup(auth, provider);
+          return await handleUserSync(result.user);
+        } catch (err: any) {
+          console.error("Google Auth popup failed inside iframe:", err);
+          throw err;
+        }
       }
     }
     
@@ -400,6 +422,16 @@ export const DBService = {
     if (index !== -1) {
       users[index].selected_subject = subject;
       localDb.saveUsers(users);
+    } else {
+      const newUser: AppUser = {
+        uid: userId,
+        email: auth?.currentUser?.email || "",
+        account_tier: "Free",
+        selected_subject: subject,
+        monthly_uploads_used_counter: 0
+      };
+      users.push(newUser);
+      localDb.saveUsers(users);
     }
   },
 
@@ -425,6 +457,17 @@ export const DBService = {
     const index = users.findIndex(u => u.uid === userId);
     if (index !== -1) {
       users[index] = { ...users[index], ...data };
+      localDb.saveUsers(users);
+    } else {
+      const newUser: AppUser = {
+        uid: userId,
+        email: auth?.currentUser?.email || "",
+        account_tier: "Free",
+        selected_subject: "Biology",
+        monthly_uploads_used_counter: 0,
+        ...data
+      };
+      users.push(newUser);
       localDb.saveUsers(users);
     }
   },

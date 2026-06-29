@@ -37,7 +37,7 @@ import {
   ExternalLink
 } from "lucide-react";
 import { auth, db, isFirebaseConfigured, activeFirebaseConfig } from "./firebase-client";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, getRedirectResult } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function App() {
@@ -94,6 +94,26 @@ export default function App() {
   // Load cached user session or synchronize Firebase session on mount
   useEffect(() => {
     if (isFirebaseConfigured && auth && db) {
+      // Handle redirect flow completion (e.g., fallback redirects on custom domains)
+      getRedirectResult(auth)
+        .then((result) => {
+          if (result && result.user) {
+            console.log("Successfully authenticated user from redirect fallback flow:", result.user.email);
+          }
+        })
+        .catch((redirectErr: any) => {
+          console.error("Google Auth redirect flow error caught:", redirectErr);
+          const errCode = redirectErr?.code || "";
+          const errMsg = redirectErr?.message || "";
+          if (errCode === "auth/unauthorized-domain" || errMsg.includes("auth/unauthorized-domain")) {
+            setDbError("Domain Unlisted: Firebase prevents authentication from custom domains like cramupai.com unless added. Go to Firebase Console > Authentication > Settings > Authorized domains and add 'cramupai.com'.");
+          } else if (errCode === "auth/operation-not-allowed" || errMsg.includes("auth/operation-not-allowed")) {
+            setDbError("Google Sign-In Disabled: Google is not enabled as a sign-in provider in your Firebase project. Go to Firebase Console > Authentication > Sign-in method, click 'Add new provider', select 'Google', enable it, and click 'Save'.");
+          } else {
+            setDbError(`Redirect Auth Failed: ${errMsg || redirectErr}`);
+          }
+        });
+
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         try {
           if (firebaseUser) {
@@ -131,13 +151,23 @@ export default function App() {
                 }
               }
               console.warn("Using offline fallback default user profile", dbErr);
-              const offlineUser: AppUser = {
+              let offlineUser: AppUser = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email || "",
                 account_tier: "Free",
                 selected_subject: "Biology",
                 monthly_uploads_used_counter: 0
               };
+              if (cachedStr) {
+                try {
+                  const parsed = JSON.parse(cachedStr) as AppUser;
+                  if (parsed && parsed.uid === firebaseUser.uid) {
+                    offlineUser = parsed;
+                  }
+                } catch (e) {
+                  console.error(e);
+                }
+              }
               setCurrentUser(offlineUser);
               localStorage.setItem("cramupai_current_user", JSON.stringify(offlineUser));
               loadUserMaterials(firebaseUser.uid);
@@ -151,13 +181,27 @@ export default function App() {
               localStorage.setItem("cramupai_current_user", JSON.stringify(u));
               loadUserMaterials(u.uid);
             } else {
-              const defaultUser: AppUser = {
+              const cachedStr = localStorage.getItem("cramupai_current_user");
+              let initialUser: AppUser | null = null;
+              if (cachedStr) {
+                try {
+                  const parsed = JSON.parse(cachedStr) as AppUser;
+                  if (parsed && parsed.uid === firebaseUser.uid) {
+                    initialUser = parsed;
+                  }
+                } catch (e) {
+                  console.error("Failed to parse cached user profile:", e);
+                }
+              }
+
+              const defaultUser: AppUser = initialUser || {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email || "",
                 account_tier: "Free",
                 selected_subject: "Biology",
                 monthly_uploads_used_counter: 0
               };
+
               try {
                 await setDoc(doc(db, "users", firebaseUser.uid), defaultUser);
               } catch (dbErr: any) {

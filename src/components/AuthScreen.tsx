@@ -127,10 +127,14 @@ export default function AuthScreen({ onAuthSuccess, isInitiallyRegistering = fal
       }
     } catch (err: any) {
       console.error("Google login failed", err);
-      if (err?.code === "auth/unauthorized-domain" || err?.message?.includes("auth/unauthorized-domain")) {
+      const errCode = err?.code || "";
+      const errMsg = err?.message || "";
+      if (errCode === "auth/unauthorized-domain" || errMsg.includes("auth/unauthorized-domain")) {
         setError("Domain Unlisted: Firebase prevents authentication from custom domains like cramupai.com unless added. Go to Firebase Console > Authentication > Settings > Authorized domains and add 'cramupai.com'.");
+      } else if (errCode === "auth/operation-not-allowed" || errMsg.includes("auth/operation-not-allowed")) {
+        setError("Google Sign-In Disabled: Google is not enabled as a sign-in provider in your Firebase project. Go to Firebase Console > Authentication > Sign-in method, click 'Add new provider', select 'Google', enable it, and click 'Save'.");
       } else {
-        setError(err.message || "Google authentication failed. Please try again.");
+        setError(errMsg || "Google authentication failed. Please try again.");
       }
     } finally {
       setLoading(false);
