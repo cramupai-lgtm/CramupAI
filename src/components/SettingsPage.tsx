@@ -446,20 +446,19 @@ export default function SettingsPage({
       await DBService.updateUserProfile(currentUser.uid, {
         auto_renew: nextVal
       });
-      const updatedUser: AppUser = {
-        ...currentUser,
-        auto_renew: nextVal
-      };
-      onProfileUpdate(updatedUser);
-      setSuccessMsg(nextVal ? "Auto-renewal turned ON successfully!" : "Auto-renewal turned OFF. You won't be charged next month!");
-      
-      setTimeout(() => {
-        setSuccessMsg(null);
-      }, 4000);
     } catch (err) {
-      console.error(err);
-      setAutoRenew(!nextVal);
+      console.warn("Failed to update auto_renew in remote database, continuing offline", err);
     }
+    const updatedUser: AppUser = {
+      ...currentUser,
+      auto_renew: nextVal
+    };
+    onProfileUpdate(updatedUser);
+    setSuccessMsg(nextVal ? "Auto-renewal turned ON successfully!" : "Auto-renewal turned OFF. You won't be charged next month!");
+    
+    setTimeout(() => {
+      setSuccessMsg(null);
+    }, 4000);
   };
 
   const initials = displayName.trim().charAt(0).toUpperCase() || "U";
@@ -474,26 +473,25 @@ export default function SettingsPage({
         display_name: displayName,
         selected_subject: selectedSubject
       });
-      
-      const updatedUser: AppUser = {
-        ...currentUser,
-        display_name: displayName,
-        selected_subject: selectedSubject
-      };
-      
-      onProfileUpdate(updatedUser);
-      setSuccessMsg("Profile saved successfully!");
-      setIsEditingSubject(false);
-      
-      // Clear success notification after 3 seconds
-      setTimeout(() => {
-        setSuccessMsg(null);
-      }, 3500);
     } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSaving(false);
+      console.warn("Failed to update user profile in remote database, continuing offline", err);
     }
+
+    const updatedUser: AppUser = {
+      ...currentUser,
+      display_name: displayName,
+      selected_subject: selectedSubject
+    };
+    
+    onProfileUpdate(updatedUser);
+    setSuccessMsg("Profile saved successfully!");
+    setIsEditingSubject(false);
+    
+    // Clear success notification after 3 seconds
+    setTimeout(() => {
+      setSuccessMsg(null);
+    }, 3500);
+    setIsSaving(false);
   };
 
   return (

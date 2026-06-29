@@ -383,12 +383,12 @@ export default function App() {
     }
     try {
       await DBService.updateUserSubject(currentUser.uid, newSubject);
-      const updatedUser = { ...currentUser, selected_subject: newSubject };
-      setCurrentUser(updatedUser);
-      localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
     } catch (err) {
-      console.error("Failed to update user subject selection:", err);
+      console.warn("Failed to update user subject selection in database, continuing offline:", err);
     }
+    const updatedUser = { ...currentUser, selected_subject: newSubject };
+    setCurrentUser(updatedUser);
+    localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
   };
 
   const handleSaveCustomSubject = async () => {
@@ -396,13 +396,13 @@ export default function App() {
     const finalSubject = customSubjectInput.trim() || "General Study";
     try {
       await DBService.updateUserSubject(currentUser.uid, finalSubject);
-      const updatedUser = { ...currentUser, selected_subject: finalSubject };
-      setCurrentUser(updatedUser);
-      localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
-      setShowCustomSubjectModal(false);
     } catch (err) {
-      console.error("Failed to save custom user subject selection:", err);
+      console.warn("Failed to save custom user subject selection in database, continuing offline:", err);
     }
+    const updatedUser = { ...currentUser, selected_subject: finalSubject };
+    setCurrentUser(updatedUser);
+    localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
+    setShowCustomSubjectModal(false);
   };
 
   const handleUpgradeSuccess = (updatedUser: AppUser) => {
