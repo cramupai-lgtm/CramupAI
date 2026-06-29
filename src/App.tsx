@@ -381,28 +381,32 @@ export default function App() {
       setShowCustomSubjectModal(true);
       return;
     }
-    try {
-      await DBService.updateUserSubject(currentUser.uid, newSubject);
-    } catch (err) {
-      console.warn("Failed to update user subject selection in database, continuing offline:", err);
-    }
+
+    // 1. Perform optimistic update immediately so UI never freezes or blocks
     const updatedUser = { ...currentUser, selected_subject: newSubject };
     setCurrentUser(updatedUser);
     localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
+
+    // 2. Fire and forget the database update in the background, catch errors silently
+    DBService.updateUserSubject(currentUser.uid, newSubject).catch((err) => {
+      console.warn("Database background sync for subject failed, using offline fallback:", err);
+    });
   };
 
   const handleSaveCustomSubject = async () => {
     if (!currentUser) return;
     const finalSubject = customSubjectInput.trim() || "General Study";
-    try {
-      await DBService.updateUserSubject(currentUser.uid, finalSubject);
-    } catch (err) {
-      console.warn("Failed to save custom user subject selection in database, continuing offline:", err);
-    }
+
+    // 1. Perform optimistic update immediately
     const updatedUser = { ...currentUser, selected_subject: finalSubject };
     setCurrentUser(updatedUser);
     localStorage.setItem("cramupai_current_user", JSON.stringify(updatedUser));
     setShowCustomSubjectModal(false);
+
+    // 2. Fire and forget
+    DBService.updateUserSubject(currentUser.uid, finalSubject).catch((err) => {
+      console.warn("Database background sync for custom subject failed, using offline fallback:", err);
+    });
   };
 
   const handleUpgradeSuccess = (updatedUser: AppUser) => {

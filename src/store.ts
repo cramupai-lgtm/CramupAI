@@ -567,36 +567,45 @@ export const DBService = {
 
   // Ingestion limit increments
   async incrementUploadCounter(userId: string): Promise<number> {
-    if (isFirebaseConfigured && db) {
-      try {
-        const userRef = doc(db, "users", userId);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as AppUser;
-          const current = userData.monthly_uploads_used_counter || 0;
-          await updateDoc(userRef, { monthly_uploads_used_counter: current + 1 });
-          return current + 1;
-        }
-      } catch (err: any) {
-        console.error("Firestore increment upload counter error, using local fallback", err);
-        try {
-          handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
-        } catch (reportErr) {
-          console.warn("Ignored Firestore report to use local cache", reportErr);
-        }
-      }
-    }
-
-    // Local Storage fallback
+    // 1. Update Local Storage immediately (Optimistic/Immediate)
+    let localNewCount = 1;
     const users = localDb.getUsers();
     const index = users.findIndex(u => u.uid === userId);
     if (index !== -1) {
       const current = users[index].monthly_uploads_used_counter || 0;
       users[index].monthly_uploads_used_counter = current + 1;
       localDb.saveUsers(users);
-      return current + 1;
+      localNewCount = current + 1;
+    } else {
+      const newUser: AppUser = {
+        uid: userId,
+        email: auth?.currentUser?.email || "",
+        account_tier: "Free",
+        selected_subject: "Biology",
+        monthly_uploads_used_counter: 1
+      };
+      users.push(newUser);
+      localDb.saveUsers(users);
     }
-    return 1;
+
+    // 2. Sync to Firestore in the background (Non-blocking)
+    if (isFirebaseConfigured && db) {
+      (async () => {
+        try {
+          const userRef = doc(db, "users", userId);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as AppUser;
+            const current = userData.monthly_uploads_used_counter || 0;
+            await updateDoc(userRef, { monthly_uploads_used_counter: current + 1 });
+          }
+        } catch (err: any) {
+          console.warn("Firestore increment upload counter background sync failed", err);
+        }
+      })();
+    }
+
+    return localNewCount;
   },
 
   // Save parsed material from Gemini API outputs
@@ -629,24 +638,18 @@ export const DBService = {
       storage_path: storagePath
     };
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, "materials", mat.id), mat);
-        return mat;
-      } catch (err: any) {
-        console.error("Firestore save material failed, using local fallback", err);
-        try {
-          handleFirestoreError(err, OperationType.WRITE, `materials/${mat.id}`);
-        } catch (reportErr) {
-          console.warn("Ignored Firestore report to use local cache", reportErr);
-        }
-      }
-    }
-
-    // Local Storage fallback
+    // 1. Save to Local Storage immediately
     const materials = localDb.getMaterials();
     materials.push(mat);
     localDb.saveMaterials(materials);
+
+    // 2. Sync to Firestore in background (Non-blocking)
+    if (isFirebaseConfigured && db) {
+      setDoc(doc(db, "materials", mat.id), mat).catch((err) => {
+        console.warn("Firestore save material background sync failed:", err);
+      });
+    }
+
     return mat;
   },
 
@@ -710,23 +713,18 @@ export const DBService = {
       questions: questionsList
     };
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, "quiz_records", quiz.id), quiz);
-        return quiz;
-      } catch (err: any) {
-        console.error("Firestore save quiz record error, using local fallback", err);
-        try {
-          handleFirestoreError(err, OperationType.WRITE, `quiz_records/${quiz.id}`);
-        } catch (reportErr) {
-          console.warn("Ignored Firestore report to use local cache", reportErr);
-        }
-      }
-    }
-
+    // 1. Save to Local Storage immediately
     const quizzes = localDb.getQuizzes();
     quizzes.push(quiz);
     localDb.saveQuizzes(quizzes);
+
+    // 2. Sync to Firestore in background (Non-blocking)
+    if (isFirebaseConfigured && db) {
+      setDoc(doc(db, "quiz_records", quiz.id), quiz).catch((err) => {
+        console.warn("Firestore save quiz record background sync failed:", err);
+      });
+    }
+
     return quiz;
   },
 
@@ -761,27 +759,22 @@ export const DBService = {
       color_theme: c.color_theme || "indigo"
     }));
 
-    if (isFirebaseConfigured && db) {
-      try {
-        const batch = writeBatch(db);
-        for (const card of savedCards) {
-          batch.set(doc(db, "flashcards", card.id), card);
-        }
-        await batch.commit();
-        return savedCards;
-      } catch (err: any) {
-        console.error("Firestore save flashcards batch error, using local fallback", err);
-        try {
-          handleFirestoreError(err, OperationType.WRITE, "flashcards");
-        } catch (reportErr) {
-          console.warn("Ignored Firestore report to use local cache", reportErr);
-        }
-      }
-    }
-
+    // 1. Save to Local Storage immediately
     const flashcards = localDb.getFlashcards();
     flashcards.push(...savedCards);
     localDb.saveFlashcards(flashcards);
+
+    // 2. Sync to Firestore in background (Non-blocking)
+    if (isFirebaseConfigured && db) {
+      const batch = writeBatch(db);
+      for (const card of savedCards) {
+        batch.set(doc(db, "flashcards", card.id), card);
+      }
+      batch.commit().catch((err) => {
+        console.warn("Firestore save flashcards batch background sync failed:", err);
+      });
+    }
+
     return savedCards;
   },
 
@@ -796,23 +789,18 @@ export const DBService = {
       color_theme: color
     };
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, "flashcards", card.id), card);
-        return card;
-      } catch (err: any) {
-        console.error("Firestore save custom flashcard error, using local fallback", err);
-        try {
-          handleFirestoreError(err, OperationType.WRITE, "flashcards");
-        } catch (reportErr) {
-          console.warn("Ignored Firestore report to use local cache", reportErr);
-        }
-      }
-    }
-
+    // 1. Save to Local Storage immediately
     const flashcards = localDb.getFlashcards();
     flashcards.push(card);
     localDb.saveFlashcards(flashcards);
+
+    // 2. Sync to Firestore in background (Non-blocking)
+    if (isFirebaseConfigured && db) {
+      setDoc(doc(db, "flashcards", card.id), card).catch((err) => {
+        console.warn("Firestore save custom flashcard background sync failed:", err);
+      });
+    }
+
     return card;
   },
 
@@ -892,23 +880,18 @@ export const DBService = {
       timestamp: new Date().toISOString()
     };
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, "chat_log", msg.id), msg);
-        return msg;
-      } catch (err: any) {
-        console.error("Firestore save chat message error, using local fallback", err);
-        try {
-          handleFirestoreError(err, OperationType.WRITE, `chat_log/${msg.id}`);
-        } catch (reportErr) {
-          console.warn("Ignored Firestore report to use local cache", reportErr);
-        }
-      }
-    }
-
+    // 1. Save to Local Storage immediately
     const chats = localDb.getChats();
     chats.push(msg);
     localDb.saveChats(chats);
+
+    // 2. Sync to Firestore in background (Non-blocking)
+    if (isFirebaseConfigured && db) {
+      setDoc(doc(db, "chat_log", msg.id), msg).catch((err) => {
+        console.warn("Firestore save chat message background sync failed:", err);
+      });
+    }
+
     return msg;
   },
 

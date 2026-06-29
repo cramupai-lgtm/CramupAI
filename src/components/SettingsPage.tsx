@@ -442,13 +442,7 @@ export default function SettingsPage({
   const handleToggleAutoRenew = async () => {
     const nextVal = !autoRenew;
     setAutoRenew(nextVal);
-    try {
-      await DBService.updateUserProfile(currentUser.uid, {
-        auto_renew: nextVal
-      });
-    } catch (err) {
-      console.warn("Failed to update auto_renew in remote database, continuing offline", err);
-    }
+    
     const updatedUser: AppUser = {
       ...currentUser,
       auto_renew: nextVal
@@ -459,6 +453,13 @@ export default function SettingsPage({
     setTimeout(() => {
       setSuccessMsg(null);
     }, 4000);
+
+    // Fire and forget
+    DBService.updateUserProfile(currentUser.uid, {
+      auto_renew: nextVal
+    }).catch((err) => {
+      console.warn("Failed to update auto_renew in remote database, continuing offline", err);
+    });
   };
 
   const initials = displayName.trim().charAt(0).toUpperCase() || "U";
@@ -467,15 +468,6 @@ export default function SettingsPage({
     e.preventDefault();
     setIsSaving(true);
     setSuccessMsg(null);
-    try {
-      // Save display name and current subject
-      await DBService.updateUserProfile(currentUser.uid, {
-        display_name: displayName,
-        selected_subject: selectedSubject
-      });
-    } catch (err) {
-      console.warn("Failed to update user profile in remote database, continuing offline", err);
-    }
 
     const updatedUser: AppUser = {
       ...currentUser,
@@ -486,12 +478,20 @@ export default function SettingsPage({
     onProfileUpdate(updatedUser);
     setSuccessMsg("Profile saved successfully!");
     setIsEditingSubject(false);
+    setIsSaving(false);
     
     // Clear success notification after 3 seconds
     setTimeout(() => {
       setSuccessMsg(null);
     }, 3500);
-    setIsSaving(false);
+
+    // Fire and forget in background
+    DBService.updateUserProfile(currentUser.uid, {
+      display_name: displayName,
+      selected_subject: selectedSubject
+    }).catch((err) => {
+      console.warn("Failed to update user profile in remote database, continuing offline", err);
+    });
   };
 
   return (
